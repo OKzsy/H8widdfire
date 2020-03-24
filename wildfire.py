@@ -17,6 +17,7 @@ import os
 import sys
 import glob
 import time
+import math
 import fnmatch
 import numpy as np
 from osgeo import gdal, ogr, osr, gdalconst
@@ -145,10 +146,11 @@ def img_filtering(xs, ys, ori_xsize, ori_ysize, kernel, ext_img):
     """
     # 使用切片后影像的波段书
     # 创建切片后存储矩阵
-    filtered_img = np.zeros((ori_ysize, ori_xsize), dtype=np.float16)
+    # 使用滑动窗口
+    filtered_img = np.zeros((math.ceil(ori_ysize / ys), math.ceil(ori_xsize / xs)), dtype=np.float16)
     for irow in range(ys):
         for icol in range(xs):
-            filtered_img += ext_img[irow: irow + ori_ysize, icol: icol + ori_xsize] * kernel[irow, icol]
+            filtered_img += ext_img[irow: irow + ori_ysize: ys, icol: icol + ori_xsize: xs] * kernel[irow, icol]
     return filtered_img
 
 
