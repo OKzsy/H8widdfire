@@ -163,7 +163,7 @@ def generat_mask(vis_file_path):
     prj = vis_ds.GetProjection()
     bands_data = vis_ds.ReadAsArray()
     # 创建掩模矩阵
-    mask = np.ones((ysize, xsize), dtype=np.uint8)
+    mask = np.ones((ysize, xsize), dtype=np.byte)
     # # 计算冰雪掩模
     # ndsi = (bands_data[0, :, :] - bands_data[4, :, :]) / (bands_data[0, :, :] + bands_data[4, :, :])
     # ndsi_index = np.where(ndsi > 0.13)
@@ -190,9 +190,18 @@ def generat_mask(vis_file_path):
     part1 = img_filtering(win_xs, win_ys, xsize, ysize, kernel, ext_ref_green * ext_ref_green)
     part2 = img_filtering(win_xs, win_ys, xsize, ysize, kernel, ext_ref_green)
     part2 **= 2
-    ref_green_std = np.sqrt(part1 - part2)
+    variance = np.maximum(part1 - part2, 0)
+    ref_green_std = np.sqrt(variance)
     ref_green_std_index = np.where(ref_green_std > 0.01)
-    mask[ref_green_std_index] = 0
+    tmp_mask = np.ones_like(ref_green_std, dtype=np.byte)
+    tmp_mask[ref_green_std_index] = 0
+    # 对原始掩模进行处理
+    ext_mask = Extend(win_xs, win_ys, mask)
+    for irow in range(win_ys):
+        for icol in range(win_xs):
+            ext_mask[irow: irow + ysize: win_ys, icol: icol + xsize: win_xs] = \
+                np.bitwise_and(ext_mask[irow: irow + ysize: win_ys, icol: icol + xsize: win_xs], tmp_mask)
+    mask = ext_mask[win_ys // 2: -(win_ys // 2), win_xs // 2: -(win_xs // 2)]
     # ref_green = ext_ref_green = part1 = part2 = ref_green_std = ref_green_std_index = None
     # # 获取0.47微米波段反射率
     # ref_blue = bands_data[0, :, :] * 0.0001
