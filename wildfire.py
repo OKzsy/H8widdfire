@@ -17,11 +17,14 @@ import os
 import sys
 import glob
 import time
-import math
+import argparse
 import fnmatch
 import numpy as np
+import warnings
+from datetime import datetime
 from osgeo import gdal, ogr, osr, gdalconst
 
+warnings.filterwarnings('ignore')
 try:
     progress = gdal.TermProgress_nocb
 except:
@@ -71,6 +74,7 @@ def transformTogeotiff(file, outdir):
     # 打开nc文件
     ds = gdal.Open(file)
     # 获取投影参数信息
+
     meta = ds.GetMetadata_Dict()
     up_latitude = float(meta['NC_GLOBAL#upper_left_latitude'])
     up_longitude = float(meta['NC_GLOBAL#upper_left_longitude'])
@@ -119,7 +123,7 @@ def transformTogeotiff(file, outdir):
     return visual_file, nir_file
 
 
-def generat_mask(vis_file_path, nir_file_path):
+def generat_mask(vis_file_path, nir_file_path, outdir):
     """利用可见光近红外波段数据生成云，水，冰雪掩模"""
     vis_ds = gdal.Open(vis_file_path)
     xsize = vis_ds.RasterXSize
@@ -139,17 +143,16 @@ def generat_mask(vis_file_path, nir_file_path):
     # 读取亮温数据
     BT_ds = gdal.Open(nir_file_path)
     bt_data = BT_ds.ReadAsArray()
-    part1 = np.bitwise_or(bt_data[1, :, :] < 270, bt_data[2, :, :] < 265)
-    part2 = np.bitwise_and(bt_data[1, :, :] < 280, (bt_data[0, :, :] - bt_data[1, :, :]) > 20)
-    part3 = np.bitwise_and(bt_data[1, :, :] < 280, (bt_data[1, :, :] - bt_data[2, :, :]) < 3)
+    part1 = np.bitwise_or(bt_data[1, :, :] < 265, bt_data[2, :, :] < 265)
+    part2 = np.bitwise_and(bt_data[1, :, :] < 285, (bt_data[0, :, :] - bt_data[1, :, :]) > 22)
+    part3 = bands_data[2, :, :] > 5600
     cld_mask = np.bitwise_or(np.bitwise_or(part1, part2), part3)
     part1 = part2 = part3 = None
     bt_data = BT_ds = None
     mask = np.bitwise_or(cld_mask, mask).astype(np.byte) * 255
     # 写出掩模
     basename = os.path.splitext(os.path.basename(vis_file_path))[0]
-    tmp_dir = r"F:\kuihua8\out"
-    mask_path = os.path.join(tmp_dir, basename) + "_cld.tif"
+    mask_path = os.path.join(outdir, basename) + "_cld.tif"
     tif_driver = gdal.GetDriverByName('GTiff')
     out_ds = tif_driver.Create(mask_path, xsize, ysize, 1, gdal.GDT_Byte)
     out_ds.SetGeoTransform(geos)
@@ -159,20 +162,133 @@ def generat_mask(vis_file_path, nir_file_path):
     return 1
 
 
-def main(indir, outdir, shp_file=None):
+def shp2raster(raster_ds, shp_layer, ext):
+    # 将行列整数浮点化
+    ext = np.array(ext) * 1.0
+    # 获取栅格数据的基本信息
+    raster_prj = raster_ds.GetProjection()
+    raster_geo = raster_ds.GetGeoTransform()
+    # 根据最小重叠矩形的范围进行矢量栅格化
+    ulx, uly = gdal.ApplyGeoTransform(raster_geo, ext[0], ext[1])
+    x_size = ext[2] - ext[0]
+    y_size = ext[3] - ext[1]
+    # 创建mask
+    mask_ds = gdal.GetDriverByName('MEM').Create('', int(x_size), int(y_size), 1, gdal.GDT_Byte)
+    mask_ds.SetProjection(raster_prj)
+    mask_geo = [ulx, raster_geo[1], 0, uly, 0, raster_geo[5]]
+    mask_ds.SetGeoTransform(mask_geo)
+    # 矢量栅格化
+    gdal.RasterizeLayer(mask_ds, [1], shp_layer, burn_values=[1])
+
+    return mask_ds
+
+
+def min_rect(raster_ds, shp_layer):
+    # 获取栅格的大小
+    x_size = raster_ds.RasterXSize
+    y_size = raster_ds.RasterYSize
+    # 获取是矢量的范围
+    extent = shp_layer.GetExtent()
+    # 获取栅格的放射变换参数
+    raster_geo = raster_ds.GetGeoTransform()
+    # 计算逆放射变换系数
+    raster_inv_geo = gdal.InvGeoTransform(raster_geo)
+    # 计算在raster上的行列号
+    # 左上
+    off_ulx, off_uly = map(round, gdal.ApplyGeoTransform(raster_inv_geo, extent[0], extent[3]))
+    # 右下
+    off_drx, off_dry = map(round, gdal.ApplyGeoTransform(raster_inv_geo, extent[1], extent[2]))
+    # 判断是否有重叠区域
+    if off_ulx >= x_size or off_uly >= y_size or off_drx <= 0 or off_dry <= 0:
+        sys.exit("Have no overlap")
+    # 限定重叠范围在栅格影像上
+    # 列
+    offset_column = np.array([off_ulx, off_drx])
+    offset_column = np.maximum((np.minimum(offset_column, x_size - 1)), 0)
+    # 行
+    offset_line = np.array([off_uly, off_dry])
+    offset_line = np.maximum((np.minimum(offset_line, y_size - 1)), 0)
+
+    return [offset_column[0], offset_line[0], offset_column[1], offset_line[1]]
+
+
+def mask_raster(raster_ds, mask_ds, ext):
+    # 将行列整数浮点化
+    ext = np.array(ext) * 1.0
+    # 获取栅格数据的基本信息
+    raster_prj = raster_ds.GetProjection()
+    raster_geo = raster_ds.GetGeoTransform()
+    bandCount = raster_ds.RasterCount
+    dataType = raster_ds.GetRasterBand(1).DataType
+    # 根据最小重叠矩形的范围进行矢量栅格化
+    ulx, uly = gdal.ApplyGeoTransform(raster_geo, ext[0], ext[1])
+    x_size = ext[2] - ext[0]
+    y_size = ext[3] - ext[1]
+    # 创建输出影像
+    result_ds = gdal.GetDriverByName('MEM').Create('', int(x_size), int(y_size), bandCount, dataType)
+    result_ds.SetProjection(raster_prj)
+    result_geo = [ulx, raster_geo[1], 0, uly, 0, raster_geo[5]]
+    result_ds.SetGeoTransform(result_geo)
+    # 获取掩模
+    mask = mask_ds.GetRasterBand(1).ReadAsArray()
+    # 对原始影像进行掩模并输出
+    for band in range(bandCount):
+        banddata = raster_ds.GetRasterBand(band + 1).ReadAsArray(int(ext[0]), int(ext[1]), int(x_size), int(y_size))
+        banddata = np.choose(mask, (0, banddata))
+        result_ds.GetRasterBand(band + 1).WriteArray(banddata)
+    return result_ds
+
+
+def clip(raster, shp, out):
+    # 打开栅格和矢量影像
+    raster_ds = gdal.Open(raster)
+    shp_ds = ogr.Open(shp)
+    shp_l = shp_ds.GetLayer()
+    # 计算矢量和栅格的最小重叠矩形
+    offset = min_rect(raster_ds, shp_l)
+    # 矢量栅格化
+    mask_ds = shp2raster(raster_ds, shp_l, offset)
+    # 进行裁剪
+    res = mask_raster(raster_ds, mask_ds, offset)
+    # 删除原来影像，写入裁剪后的影像
+    raster_ds = None
+    shp_ds = None
+    os.remove(raster)
+    gdal.GetDriverByName("GTiff").CreateCopy(out, res, strict=1)
+    return None
+
+
+def action(indir, outdir, shp_file):
     # 搜索文件
     files = searchfiles(indir, partfileinfo='*.nc')
     for ifile in files:
         visual_file, nir_file = transformTogeotiff(ifile, outdir)
         # 预留裁剪模块，只处理感兴趣区域
         if shp_file is not None:
-            pass
+            clip(visual_file, shp_file, visual_file)
+            clip(nir_file, shp_file, nir_file)
         # 生成云，水，冰雪掩模
-        cld = generat_mask(visual_file, nir_file)
+        cld = generat_mask(visual_file, nir_file, outdir)
+        # 火点检测
+        pass
     return None
 
 
-if __name__ == '__main__':
+def main(argv):
+    # 增加试用期
+    end_time = "2020-04-15"
+    end_date = datetime.strptime(end_time, "%Y-%m-%d")
+    # 获取程序运行时间
+    run_date = datetime.now()
+    if (end_date - run_date).days <= 0:
+        sys.exit("End of trial time")
+    parser = argparse.ArgumentParser(prog=argv[0])
+    parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
+    parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
+    parser.add_argument('-v', '--vector', dest='vector', default=None)
+    args = parser.parse_args(argv[1:])
+    if not os.path.exists(args.dstdir):
+        os.makedirs(args.dstdir)
     # 支持中文路径
     gdal.SetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")
     # 支持中文属性字段
@@ -182,9 +298,16 @@ if __name__ == '__main__':
     # 注册所有gdal驱动
     gdal.AllRegister()
     start_time = time.time()
-    H8_dir_path = r"F:\kuihua8"
-    out_dir_path = r"F:\kuihua8\out"
-    shp = None
-    main(H8_dir_path, out_dir_path, shp_file=shp)
+    H8_dir_path = args.srcdir
+    out_dir_path = args.dstdir
+    shp = args.vector
+    action(H8_dir_path, out_dir_path, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main(sys.argv))
+    except KeyboardInterrupt:
+        sys.exit(-1)
