@@ -274,14 +274,15 @@ def action(indir, outdir, shp_file):
     return None
 
 
-def main(argv):
-    parser = argparse.ArgumentParser(prog=argv[0])
-    parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
-    parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
-    parser.add_argument('-v', '--vector', dest='vector', default=None)
-    args = parser.parse_args(argv[1:])
-    if not os.path.exists(args.dstdir):
-        os.makedirs(args.dstdir)
+# def main(argv):
+def main():
+    # parser = argparse.ArgumentParser(prog=argv[0])
+    # parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
+    # parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
+    # parser.add_argument('-v', '--vector', dest='vector', default=None)
+    # args = parser.parse_args(argv[1:])
+    # if not os.path.exists(args.dstdir):
+    #     os.makedirs(args.dstdir)
     # 支持中文路径
     gdal.SetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")
     # 支持中文属性字段
@@ -291,9 +292,12 @@ def main(argv):
     # 注册所有gdal驱动
     gdal.AllRegister()
     start_time = time.time()
-    H8_dir_path = args.srcdir
-    out_dir_path = args.dstdir
-    shp = args.vector
+    # H8_dir_path = args.srcdir
+    # out_dir_path = args.dstdir
+    # shp = args.vector
+    H8_dir_path = r"F:\kuihua8"
+    out_dir_path = r"F:\kuihua8\out"
+    shp = r"F:\kuihua8\guojie\bou1_4p.shp"
     action(H8_dir_path, out_dir_path, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
@@ -301,6 +305,7 @@ def main(argv):
 
 if __name__ == '__main__':
     try:
-        sys.exit(main(sys.argv))
+        # sys.exit(main(sys.argv))
+        sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(-1)
