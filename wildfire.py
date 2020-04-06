@@ -63,8 +63,9 @@ def getsubsetdata(datasets, subdataset_name):
 
 
 def transformTogeotiff(file, outdir):
-    visual_band_list = ['albedo_01', 'albedo_02', 'albedo_03', 'albedo_04', 'albedo_05']
-    nir_band_list = ['tbb_07', 'tbb_14', 'tbb_15']
+    visual_band_list = ['albedo_01', 'albedo_02',
+                        'albedo_03', 'albedo_04', 'albedo_05']
+    nir_band_list = ['tbb_07', 'tbb_14', 'tbb_15', 'SOZ']
     # 获取nc数据的文件名
     basename = os.path.splitext(os.path.basename(file))[0]
     # 创建可见光影像文件名
@@ -95,7 +96,8 @@ def transformTogeotiff(file, outdir):
     soz_data = 1.0 / np.cos(soz_data * 0.01 * np.pi / 180)
     # 创建可视化图像
     tif_driver = gdal.GetDriverByName('GTiff')
-    visual_out_ds = tif_driver.Create(visual_file, xsize, ysize, len(visual_band_list), gdal.GDT_Int16)
+    visual_out_ds = tif_driver.Create(
+        visual_file, xsize, ysize, len(visual_band_list), gdal.GDT_Int16)
     visual_out_ds.SetGeoTransform(geos)
     visual_out_ds.SetProjection(prj)
     band_id = 0
@@ -108,7 +110,8 @@ def transformTogeotiff(file, outdir):
         visual_band_data = None
     visual_out_ds = None
     # 创建热红外图像，用于火点检测
-    nir_out_ds = tif_driver.Create(nir_file, xsize, ysize, len(nir_band_list), gdal.GDT_Float32)
+    nir_out_ds = tif_driver.Create(
+        nir_file, xsize, ysize, len(nir_band_list) + 1, gdal.GDT_Float32)
     nir_out_ds.SetGeoTransform(geos)
     nir_out_ds.SetProjection(prj)
     band_id = 0
@@ -119,6 +122,7 @@ def transformTogeotiff(file, outdir):
         nir_band_data = nir_band_data * 0.01 + 273.15
         nir_out_ds.GetRasterBand(band_id).WriteArray(nir_band_data)
         nir_band_data = None
+    nir_out_ds.GetRasterBand(band_id + 1).WriteArray(soz_data)
     nir_out_ds = None
     return visual_file, nir_file
 
@@ -132,11 +136,13 @@ def generat_mask(vis_file_path, nir_file_path, outdir):
     prj = vis_ds.GetProjection()
     bands_data = vis_ds.ReadAsArray()
     # 计算冰雪掩模
-    ndsi = (bands_data[0, :, :] - bands_data[4, :, :]) / (bands_data[0, :, :] + bands_data[4, :, :])
+    ndsi = (bands_data[0, :, :] - bands_data[4, :, :]) / \
+           (bands_data[0, :, :] + bands_data[4, :, :])
     mask = ndsi > 0.13
     ndsi = None
     # 计算水体掩模
-    ndwi = (bands_data[3, :, :] - bands_data[2, :, :]) / (bands_data[3, :, :] + bands_data[2, :, :])
+    ndwi = (bands_data[3, :, :] - bands_data[2, :, :]) / \
+           (bands_data[3, :, :] + bands_data[2, :, :])
     mask = np.bitwise_or(ndwi < 0, mask)
     ndwi = None
     # 计算云掩模
@@ -144,7 +150,8 @@ def generat_mask(vis_file_path, nir_file_path, outdir):
     BT_ds = gdal.Open(nir_file_path)
     bt_data = BT_ds.ReadAsArray()
     part1 = np.bitwise_or(bt_data[1, :, :] < 265, bt_data[2, :, :] < 265)
-    part2 = np.bitwise_and(bt_data[1, :, :] < 285, (bt_data[0, :, :] - bt_data[1, :, :]) > 22)
+    part2 = np.bitwise_and(bt_data[1, :, :] < 285,
+                           (bt_data[0, :, :] - bt_data[1, :, :]) > 22)
     part3 = bands_data[2, :, :] > 5600
     cld_mask = np.bitwise_or(np.bitwise_or(part1, part2), part3)
     part1 = part2 = part3 = None
@@ -159,7 +166,7 @@ def generat_mask(vis_file_path, nir_file_path, outdir):
     out_ds.SetProjection(prj)
     out_ds.GetRasterBand(1).WriteArray(mask)
     out_ds = None
-    return 1
+    return mask_path
 
 
 def shp2raster(raster_ds, shp_layer, ext):
@@ -173,7 +180,8 @@ def shp2raster(raster_ds, shp_layer, ext):
     x_size = ext[2] - ext[0]
     y_size = ext[3] - ext[1]
     # 创建mask
-    mask_ds = gdal.GetDriverByName('MEM').Create('', int(x_size), int(y_size), 1, gdal.GDT_Byte)
+    mask_ds = gdal.GetDriverByName('MEM').Create(
+        '', int(x_size), int(y_size), 1, gdal.GDT_Byte)
     mask_ds.SetProjection(raster_prj)
     mask_geo = [ulx, raster_geo[1], 0, uly, 0, raster_geo[5]]
     mask_ds.SetGeoTransform(mask_geo)
@@ -195,9 +203,11 @@ def min_rect(raster_ds, shp_layer):
     raster_inv_geo = gdal.InvGeoTransform(raster_geo)
     # 计算在raster上的行列号
     # 左上
-    off_ulx, off_uly = map(round, gdal.ApplyGeoTransform(raster_inv_geo, extent[0], extent[3]))
+    off_ulx, off_uly = map(round, gdal.ApplyGeoTransform(
+        raster_inv_geo, extent[0], extent[3]))
     # 右下
-    off_drx, off_dry = map(round, gdal.ApplyGeoTransform(raster_inv_geo, extent[1], extent[2]))
+    off_drx, off_dry = map(round, gdal.ApplyGeoTransform(
+        raster_inv_geo, extent[1], extent[2]))
     # 判断是否有重叠区域
     if off_ulx >= x_size or off_uly >= y_size or off_drx <= 0 or off_dry <= 0:
         sys.exit("Have no overlap")
@@ -225,7 +235,8 @@ def mask_raster(raster_ds, mask_ds, ext):
     x_size = ext[2] - ext[0]
     y_size = ext[3] - ext[1]
     # 创建输出影像
-    result_ds = gdal.GetDriverByName('MEM').Create('', int(x_size), int(y_size), bandCount, dataType)
+    result_ds = gdal.GetDriverByName('MEM').Create(
+        '', int(x_size), int(y_size), bandCount, dataType)
     result_ds.SetProjection(raster_prj)
     result_geo = [ulx, raster_geo[1], 0, uly, 0, raster_geo[5]]
     result_ds.SetGeoTransform(result_geo)
@@ -233,7 +244,9 @@ def mask_raster(raster_ds, mask_ds, ext):
     mask = mask_ds.GetRasterBand(1).ReadAsArray()
     # 对原始影像进行掩模并输出
     for band in range(bandCount):
-        banddata = raster_ds.GetRasterBand(band + 1).ReadAsArray(int(ext[0]), int(ext[1]), int(x_size), int(y_size))
+        banddata = raster_ds.GetRasterBand(
+            band + 1).ReadAsArray(int(ext[0]), int(ext[1]), int(x_size),
+                                  int(y_size))
         banddata = np.choose(mask, (0, banddata))
         result_ds.GetRasterBand(band + 1).WriteArray(banddata)
     return result_ds
@@ -258,7 +271,31 @@ def clip(raster, shp, out):
     return None
 
 
-def action(indir, outdir, shp_file):
+def detectFire(thermal_file, cloud_mask, plant_mask):
+    """
+    利用热红外影像进行火点检测，同时对检测到的火点利用各种掩膜进行筛查
+    :param thermal_file:
+    :param cloud_mask:
+    :param plant_mask:
+    :return:
+    """
+    # 打开各类数据集,并获取数据
+    thermal_data = gdal.Open(thermal_file).ReadAsArray()
+    cloud_data = gdal.Open(cloud_mask).ReadAsArray()
+    plant_data = gdal.Open(plant_mask).ReadAsArray()
+    """
+    火点检测思想为首先进行绝对火点检测，包括一类绝对火点和二类绝对火点。然后使用火点
+    绝对火点掩膜、云掩膜剔除不需要进一步检测的像元点，对于剩余的像元点进行背景火点检测。
+    """
+    # 进行火点检测
+    # 进行第一类绝对火点检测
+    fire_mask = (thermal_data[0, :, :] - 30 * thermal_data[3, :, :]) > 330
+    # 进行第二类绝对火点检测
+
+    return None
+
+
+def action(indir, outdir, veg_msk, shp_file):
     # 搜索文件
     files = searchfiles(indir, partfileinfo='*.nc')
     for ifile in files:
@@ -268,9 +305,9 @@ def action(indir, outdir, shp_file):
             clip(visual_file, shp_file, visual_file)
             clip(nir_file, shp_file, nir_file)
         # 生成云，水，冰雪掩模
-        cld = generat_mask(visual_file, nir_file, outdir)
+        cld_msk = generat_mask(visual_file, nir_file, outdir)
         # 火点检测
-        pass
+        res = detectFire(nir_file, cld_msk, veg_msk)
     return None
 
 
@@ -298,7 +335,8 @@ def main():
     H8_dir_path = r"F:\kuihua8"
     out_dir_path = r"F:\kuihua8\out"
     shp = r"F:\kuihua8\guojie\bou1_4p.shp"
-    action(H8_dir_path, out_dir_path, shp_file=shp)
+    vegetation_mask = None
+    action(H8_dir_path, out_dir_path, veg_msk=None, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
 
