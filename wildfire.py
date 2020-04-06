@@ -65,7 +65,7 @@ def getsubsetdata(datasets, subdataset_name):
 def transformTogeotiff(file, outdir):
     visual_band_list = ['albedo_01', 'albedo_02',
                         'albedo_03', 'albedo_04', 'albedo_05']
-    nir_band_list = ['tbb_07', 'tbb_14', 'tbb_15', 'SOZ']
+    nir_band_list = ['tbb_07', 'tbb_14', 'tbb_15']
     # 获取nc数据的文件名
     basename = os.path.splitext(os.path.basename(file))[0]
     # 创建可见光影像文件名
