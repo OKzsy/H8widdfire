@@ -271,6 +271,40 @@ def clip(raster, shp, out):
     return None
 
 
+def Extend(xs, ys, matrix):
+    """
+    根据滤波模板的大小，对原始影像矩阵进行外扩。
+    :param xs: 滤波模板的xsize，要求为奇数
+    :param ys: 滤波模板的ysize，要求为奇数
+    :param matrix: 原始影像矩阵
+    :return: 依据模板大小扩展后的矩阵
+    """
+    xs_fill = int((xs - 1) / 2)
+    ys_fill = int((ys - 1) / 2)
+    # 使用镜像填充
+    extended_val = np.pad(matrix, ((ys_fill, ys_fill), (xs_fill, xs_fill)), "reflect")
+    matrix = None
+    return extended_val
+
+
+def img_mean(xs, ys, ori_xsize, ori_ysize, kernel, ext_img):
+    """
+
+    :param xs: 卷积核大小：列
+    :param ys: 卷积核大小：行
+    :param kernel: 卷积核
+    :param ext_img: 经扩展后的影像
+    :return: 滤波后的影像
+    """
+    # 使用切片后影像的波段书
+    # 创建切片后存储矩阵
+    filtered_img = np.zeros((ori_ysize, ori_xsize), dtype=np.float16)
+    for irow in range(ys):
+        for icol in range(xs):
+            filtered_img += ext_img[irow: irow + ori_ysize, icol: icol + ori_xsize] * kernel[irow, icol]
+    return filtered_img
+
+
 def detectFire(thermal_file, cloud_mask, plant_mask):
     """
     利用热红外影像进行火点检测，同时对检测到的火点利用各种掩膜进行筛查
@@ -280,7 +314,10 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     :return:
     """
     # 打开各类数据集,并获取数据
-    thermal_data = gdal.Open(thermal_file).ReadAsArray()
+    thermal_ds = gdal.Open(thermal_file)
+    thermal_data = thermal_ds.ReadAsArray()
+    xsize = thermal_ds.RasterXSize
+    ysize = thermal_ds.RasterYSize
     cloud_data = gdal.Open(cloud_mask).ReadAsArray()
     plant_data = gdal.Open(plant_mask).ReadAsArray()
     """
@@ -289,9 +326,25 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     """
     # 进行火点检测
     # 进行第一类绝对火点检测
-    fire_mask = (thermal_data[0, :, :] - 30 * thermal_data[3, :, :]) > 330
-    # 进行第二类绝对火点检测
-
+    Compensation_value = 15 * thermal_data[3, :, :]
+    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 330
+    # 以5 * 5建立背景窗口，进行第二类绝对火点检测
+    win_xs = win_ys = 5
+    kernel = (np.arange(win_xs * win_ys) + 1) / (win_xs * win_ys)
+    BT41 = np.maximum(thermal_data[0, :, :] - thermal_data[1, :, :], Compensation_value)
+    BT04 = np.maximum(thermal_data[0, :, :], 280 + Compensation_value)
+    ext_BT04 = Extend(win_xs, win_ys, BT04)
+    MT04 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT04)
+    ext_BT41 = Extend(win_xs, win_ys, BT41)
+    MT41 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT41)
+    part1 = (BT04 - MT04) > 20
+    part2 = (BT04 - Compensation_value) > 315
+    part3 = (MT41 - Compensation_value) < 20
+    fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
+    fire_mask = np.bitwise_or(fire_mask, fire_abs2)
+    part1 = part2 = part3 = fire_abs2 = None
+    # 进行背景火点检测
+    
     return None
 
 
