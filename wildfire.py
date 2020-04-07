@@ -344,8 +344,9 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     fire_mask = np.bitwise_or(fire_mask, fire_abs2)
     part1 = part2 = part3 = fire_abs2 = None
     # 进行背景火点检测
-    
-    return None
+    # 过滤已检测出的绝对火点，云，和非植被区域
+
+    return 1
 
 
 def action(indir, outdir, veg_msk, shp_file):
@@ -370,6 +371,7 @@ def main():
     # parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
     # parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
     # parser.add_argument('-v', '--vector', dest='vector', default=None)
+    # parser.add_argument('-p', '--plant', dest='plant', required=True)
     # args = parser.parse_args(argv[1:])
     # if not os.path.exists(args.dstdir):
     #     os.makedirs(args.dstdir)
