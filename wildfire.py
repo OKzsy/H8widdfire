@@ -314,16 +314,14 @@ def detect_dynamic(point_x, point_y, rows, cols, data):
         star_y = -radius if (anchor_y - radius) > 0 else (1 - anchor_y)
         end_x = radius if (rows - anchor_x - radius) > 1 else (rows - anchor_x - 2)
         end_y = radius if (cols - anchor_y - radius) > 1 else (cols - anchor_y - 2)
-        # 生成所在区域窗口位置索引，用于计算高斯权重
-        x = list(range(star_x, end_x + 1))
-        y = list(range(star_y, end_y + 1))
-        weight_index = np.meshgrid(y, x)
         # 计算梯度
-        xx = list(range(star_x - 1 + anchor_x, end_x + 2 + anchor_x))
-        yy = list(range(star_y - 1 + anchor_y, end_y + 2 + anchor_y))
+        xx = list(range(star_x + anchor_x, end_x + 1 + anchor_x))
+        yy = list(range(star_y + anchor_y, end_y + 1 + anchor_y))
         grad_index = np.meshgrid(yy, xx)
         # 获取计算梯度区域数据
-        grad_matrix = data[grad_index[1], grad_index[0]]
+        thermal_matrix = data[0:2, grad_index[1], grad_index[0]]
+        # 计算该窗口的统计信息
+
         pass
     return 1
 
