@@ -263,10 +263,11 @@ def clip(raster, shp, out):
     mask_ds = shp2raster(raster_ds, shp_l, offset)
     # 进行裁剪
     res = mask_raster(raster_ds, mask_ds, offset)
-    # 删除原来影像，写入裁剪后的影像
     raster_ds = None
     shp_ds = None
-    os.remove(raster)
+    # 如果裁剪后的新影像文件名和原始一致，则删除原来影像，写入裁剪后的影像，否则不删除
+    if os.path.exists(out):
+        os.remove(out)
     gdal.GetDriverByName("GTiff").CreateCopy(out, res, strict=1)
     return None
 
@@ -289,7 +290,6 @@ def Extend(xs, ys, matrix):
 
 def img_mean(xs, ys, ori_xsize, ori_ysize, kernel, ext_img):
     """
-
     :param xs: 卷积核大小：列
     :param ys: 卷积核大小：行
     :param kernel: 卷积核
@@ -303,6 +303,29 @@ def img_mean(xs, ys, ori_xsize, ori_ysize, kernel, ext_img):
         for icol in range(xs):
             filtered_img += ext_img[irow: irow + ori_ysize, icol: icol + ori_xsize] * kernel[irow, icol]
     return filtered_img
+
+
+def detect_dynamic(point_x, point_y, rows, cols, data):
+    anchor_x = point_x
+    anchor_y = point_y
+    for win_size in range(3, 22, 2):
+        radius = win_size // 2
+        star_x = -radius if (anchor_x - radius) > 0 else (1 - anchor_x)
+        star_y = -radius if (anchor_y - radius) > 0 else (1 - anchor_y)
+        end_x = radius if (rows - anchor_x - radius) > 1 else (rows - anchor_x - 2)
+        end_y = radius if (cols - anchor_y - radius) > 1 else (cols - anchor_y - 2)
+        # 生成所在区域窗口位置索引，用于计算高斯权重
+        x = list(range(star_x, end_x + 1))
+        y = list(range(star_y, end_y + 1))
+        weight_index = np.meshgrid(y, x)
+        # 计算梯度
+        xx = list(range(star_x - 1 + anchor_x, end_x + 2 + anchor_x))
+        yy = list(range(star_y - 1 + anchor_y, end_y + 2 + anchor_y))
+        grad_index = np.meshgrid(yy, xx)
+        # 获取计算梯度区域数据
+        grad_matrix = data[grad_index[1], grad_index[0]]
+        pass
+    return 1
 
 
 def detectFire(thermal_file, cloud_mask, plant_mask):
@@ -342,10 +365,23 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     part3 = (MT41 - Compensation_value) < 20
     fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     fire_mask = np.bitwise_or(fire_mask, fire_abs2)
-    part1 = part2 = part3 = fire_abs2 = None
     # 进行背景火点检测
+    # 潜在火点的识别
+    part4 = (BT04 - MT04) > 5
+    part5 = (BT41 - MT41) > 5
+    fire_pot = np.bitwise_and(np.bitwise_and(np.bitwise_or(part2, part4), part5), part3)
     # 过滤已检测出的绝对火点，云，和非植被区域
-
+    clear_area = thermal_data * (1 - cloud_data) * plant_data * (1 - fire_mask) * (1 - fire_pot)
+    # 对潜在火点进行逐个判断
+    for irow in range(ysize):
+        for icol in range(xsize):
+            value = fire_pot[irow, icol]
+            if not value:
+                continue
+            # 动态窗口进行判断
+            fire_res = detect_dynamic(irow, icol, ysize, xsize, clear_area)
+            fire_pot[irow, icol] = fire_res
+            pass
     return 1
 
 
@@ -358,10 +394,13 @@ def action(indir, outdir, veg_msk, shp_file):
         if shp_file is not None:
             clip(visual_file, shp_file, visual_file)
             clip(nir_file, shp_file, nir_file)
+            # 利用shp文件裁剪植被掩模
+            sub_veg_msk = veg_msk + '_tmp_veg_msk.tif'
+            clip(veg_msk, shp_file, sub_veg_msk)
         # 生成云，水，冰雪掩模
         cld_msk = generat_mask(visual_file, nir_file, outdir)
         # 火点检测
-        res = detectFire(nir_file, cld_msk, veg_msk)
+        res = detectFire(nir_file, cld_msk, sub_veg_msk)
     return None
 
 
@@ -387,6 +426,7 @@ def main():
     # H8_dir_path = args.srcdir
     # out_dir_path = args.dstdir
     # shp = args.vector
+    # vegetation_mask = plant
     H8_dir_path = r"F:\kuihua8"
     out_dir_path = r"F:\kuihua8\out"
     shp = r"F:\kuihua8\guojie\bou1_4p.shp"
