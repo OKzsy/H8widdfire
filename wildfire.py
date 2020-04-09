@@ -127,7 +127,7 @@ def transformTogeotiff(file, outdir):
     return visual_file, nir_file
 
 
-def generat_mask(vis_file_path, nir_file_path, outdir):
+def generat_mask(vis_file_path, nir_file_path, mask_path):
     """利用可见光近红外波段数据生成云，水，冰雪掩模"""
     vis_ds = gdal.Open(vis_file_path)
     xsize = vis_ds.RasterXSize
@@ -158,8 +158,6 @@ def generat_mask(vis_file_path, nir_file_path, outdir):
     bt_data = BT_ds = None
     mask = np.bitwise_or(cld_mask, mask).astype(np.byte) * 255
     # 写出掩模
-    basename = os.path.splitext(os.path.basename(vis_file_path))[0]
-    mask_path = os.path.join(outdir, basename) + "_cld.tif"
     tif_driver = gdal.GetDriverByName('GTiff')
     out_ds = tif_driver.Create(mask_path, xsize, ysize, 1, gdal.GDT_Byte)
     out_ds.SetGeoTransform(geos)
@@ -301,11 +299,11 @@ def img_mean(xs, ys, ori_xsize, ori_ysize, kernel, ext_img):
     filtered_img = np.zeros((ori_ysize, ori_xsize), dtype=np.float16)
     for irow in range(ys):
         for icol in range(xs):
-            filtered_img += ext_img[irow: irow + ori_ysize, icol: icol + ori_xsize] * kernel[irow, icol]
+            filtered_img += ext_img[irow: irow + ori_ysize, icol: icol + ori_xsize] * kernel[irow * xs + icol]
     return filtered_img
 
 
-def detect_dynamic(point_x, point_y, rows, cols, data):
+def detect_dynamic(point_x, point_y, rows, cols, IT04, IT41, data):
     anchor_x = point_x
     anchor_y = point_y
     for win_size in range(3, 22, 2):
@@ -321,9 +319,32 @@ def detect_dynamic(point_x, point_y, rows, cols, data):
         # 获取计算梯度区域数据
         thermal_matrix = data[0:2, grad_index[1], grad_index[0]]
         # 计算该窗口的统计信息
-
-        pass
-    return 1
+        bt04 = thermal_matrix[0, :, :]
+        bt41 = bt04 - thermal_matrix[1, :, :]
+        bt04_index = np.where(bt04 != 0)
+        BT04 = bt04[bt04_index]
+        BT41 = bt41[np.where(bt41 != 0)]
+        # 判断是否满足基本条件
+        clear_num = bt04_index[0].shape[0]
+        if not ((clear_num / (win_size * win_size) >= 0.25) and (clear_num >= 8)):
+            continue
+        IM04 = np.mean(BT04)
+        IS04 = np.std(BT04, ddof=1)
+        if IS04 < 2:
+            IS04 = 2
+        elif IS04 > 4:
+            IS04 = 4
+        IM41 = np.mean(BT41)
+        IS41 = np.mean(BT41, ddof=1)
+        if IS41 < 2:
+            IS41 = 2
+        elif IS41 > 4:
+            IS41 = 4
+        part1 = (IT04 - IM04) > (2 * IS04)
+        part2 = (IT41 - IM41) > (2 * IS41)
+        if part1 and part2:
+            return 1
+    return 0
 
 
 def detectFire(thermal_file, cloud_mask, plant_mask):
@@ -340,6 +361,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     xsize = thermal_ds.RasterXSize
     ysize = thermal_ds.RasterYSize
     cloud_data = gdal.Open(cloud_mask).ReadAsArray()
+    cloud_data = (cloud_data / 255).astype(dtype=np.byte)
     plant_data = gdal.Open(plant_mask).ReadAsArray()
     """
     火点检测思想为首先进行绝对火点检测，包括一类绝对火点和二类绝对火点。然后使用火点
@@ -348,7 +370,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     # 进行火点检测
     # 进行第一类绝对火点检测
     Compensation_value = 15 * thermal_data[3, :, :]
-    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 330
+    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 280
     # 以5 * 5建立背景窗口，进行第二类绝对火点检测
     win_xs = win_ys = 5
     kernel = (np.arange(win_xs * win_ys) + 1) / (win_xs * win_ys)
@@ -359,15 +381,16 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     ext_BT41 = Extend(win_xs, win_ys, BT41)
     MT41 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT41)
     part1 = (BT04 - MT04) > 20
-    part2 = (BT04 - Compensation_value) > 315
-    part3 = (MT41 - Compensation_value) < 20
+    part2 = (BT04 - Compensation_value) > 280
+    part3 = (MT41 - Compensation_value) < 30
     fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     fire_mask = np.bitwise_or(fire_mask, fire_abs2)
     # 进行背景火点检测
     # 潜在火点的识别
-    part4 = (BT04 - MT04) > 5
-    part5 = (BT41 - MT41) > 5
+    part4 = (BT04 - MT04) > 2
+    part5 = (BT41 - MT41) > 2
     fire_pot = np.bitwise_and(np.bitwise_and(np.bitwise_or(part2, part4), part5), part3)
+    # fire_mask = np.bitwise_or(fire_mask, fire_pot)
     # 过滤已检测出的绝对火点，云，和非植被区域
     clear_area = thermal_data * (1 - cloud_data) * plant_data * (1 - fire_mask) * (1 - fire_pot)
     # 对潜在火点进行逐个判断
@@ -377,26 +400,37 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
             if not value:
                 continue
             # 动态窗口进行判断
-            fire_res = detect_dynamic(irow, icol, ysize, xsize, clear_area)
+            fire_res = detect_dynamic(irow, icol, ysize, xsize, BT04[irow, icol], BT41[irow, icol], clear_area)
             fire_pot[irow, icol] = fire_res
-            pass
+    fire_mask = np.bitwise_or(fire_mask, fire_pot)
+    dirpath = os.path.dirname(thermal_file)
+    basename = os.path.splitext(os.path.basename(thermal_file))[0]
+    fire_mask_path = os.path.join(dirpath, basename) + '_fire_msk.tif'
+    tif_driver = gdal.GetDriverByName('GTiff')
+    out_ds = tif_driver.Create(fire_mask_path, xsize, ysize, 1, gdal.GDT_Byte)
+    out_ds.SetGeoTransform(thermal_ds.GetGeoTransform())
+    out_ds.SetProjection(thermal_ds.GetProjection())
+    out_ds.GetRasterBand(1).WriteArray(fire_mask)
+    out_ds = None
     return 1
 
 
 def action(indir, outdir, veg_msk, shp_file):
     # 搜索文件
-    files = searchfiles(indir, partfileinfo='*.nc')
+    files = searchfiles(indir, partfileinfo='*20200331*.nc')
     for ifile in files:
+        basename = os.path.splitext(os.path.basename(ifile))[0]
         visual_file, nir_file = transformTogeotiff(ifile, outdir)
         # 预留裁剪模块，只处理感兴趣区域
         if shp_file is not None:
             clip(visual_file, shp_file, visual_file)
             clip(nir_file, shp_file, nir_file)
             # 利用shp文件裁剪植被掩模
-            sub_veg_msk = veg_msk + '_tmp_veg_msk.tif'
+            sub_veg_msk = os.path.join(outdir, basename) + '_veg_msk.tif'
             clip(veg_msk, shp_file, sub_veg_msk)
         # 生成云，水，冰雪掩模
-        cld_msk = generat_mask(visual_file, nir_file, outdir)
+        cloud_mask_path = os.path.join(outdir, basename) + '_cld_msk.tif'
+        cld_msk = generat_mask(visual_file, nir_file, cloud_mask_path)
         # 火点检测
         res = detectFire(nir_file, cld_msk, sub_veg_msk)
     return None
@@ -425,11 +459,11 @@ def main():
     # out_dir_path = args.dstdir
     # shp = args.vector
     # vegetation_mask = plant
-    H8_dir_path = r"F:\kuihua8"
-    out_dir_path = r"F:\kuihua8\out"
+    H8_dir_path = r"F:\kuihua8\fire"
+    out_dir_path = r"F:\kuihua8\out\tmp"
     shp = r"F:\kuihua8\guojie\bou1_4p.shp"
-    vegetation_mask = None
-    action(H8_dir_path, out_dir_path, veg_msk=None, shp_file=shp)
+    vegetation_mask = r"F:\kuihua8\vegetable\veg_china_mask.tif"
+    action(H8_dir_path, out_dir_path, veg_msk=vegetation_mask, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
 
