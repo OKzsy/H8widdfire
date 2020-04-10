@@ -373,7 +373,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 280
     # 以5 * 5建立背景窗口，进行第二类绝对火点检测
     win_xs = win_ys = 5
-    kernel = (np.arange(win_xs * win_ys) + 1) / (win_xs * win_ys)
+    kernel = (np.arange(win_xs * win_ys) + 1) / (win_xs * win_ys)  # 存在问题
     BT41 = np.maximum(thermal_data[0, :, :] - thermal_data[1, :, :], Compensation_value)
     BT04 = np.maximum(thermal_data[0, :, :], 280 + Compensation_value)
     ext_BT04 = Extend(win_xs, win_ys, BT04)
