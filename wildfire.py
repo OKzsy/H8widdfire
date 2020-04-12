@@ -308,10 +308,10 @@ def detect_dynamic(point_x, point_y, rows, cols, IT04, IT41, data):
     anchor_y = point_y
     for win_size in range(3, 22, 2):
         radius = win_size // 2
-        star_x = -radius if (anchor_x - radius) > 0 else (1 - anchor_x)
-        star_y = -radius if (anchor_y - radius) > 0 else (1 - anchor_y)
-        end_x = radius if (rows - anchor_x - radius) > 1 else (rows - anchor_x - 2)
-        end_y = radius if (cols - anchor_y - radius) > 1 else (cols - anchor_y - 2)
+        star_x = -radius if (anchor_x - radius) >= 0 else -anchor_x
+        star_y = -radius if (anchor_y - radius) >= 0 else -anchor_y
+        end_x = radius if (rows - anchor_x - radius) >= 1 else (rows - anchor_x - 1)
+        end_y = radius if (cols - anchor_y - radius) >= 1 else (cols - anchor_y - 1)
         # 计算梯度
         xx = list(range(star_x + anchor_x, end_x + 1 + anchor_x))
         yy = list(range(star_y + anchor_y, end_y + 1 + anchor_y))
@@ -344,8 +344,8 @@ def detect_dynamic(point_x, point_y, rows, cols, IT04, IT41, data):
         part1 = (IT04 - IM04) > (3 * IS04)
         part2 = (IT41 - IM41) > (3.5 * IS41)
         if part1 and part2:
-            return 1
-    return 0
+            return True
+    return False
 
 
 def detectFire(thermal_file, cloud_mask, plant_mask):
