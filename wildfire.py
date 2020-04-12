@@ -320,28 +320,29 @@ def detect_dynamic(point_x, point_y, rows, cols, IT04, IT41, data):
         thermal_matrix = data[0:2, grad_index[1], grad_index[0]]
         # 计算该窗口的统计信息
         bt04 = thermal_matrix[0, :, :]
+        all_num = bt04.size
         bt41 = bt04 - thermal_matrix[1, :, :]
         bt04_index = np.where(bt04 != 0)
         BT04 = bt04[bt04_index]
         BT41 = bt41[np.where(bt41 != 0)]
         # 判断是否满足基本条件
         clear_num = bt04_index[0].shape[0]
-        if not ((clear_num / (win_size * win_size) >= 0.25) and (clear_num >= 8)):
+        if not ((clear_num / all_num >= 0.25) and (clear_num >= 8)):
             continue
         IM04 = np.mean(BT04)
         IS04 = np.std(BT04, ddof=1)
-        if IS04 < 2:
-            IS04 = 2
-        elif IS04 > 4:
-            IS04 = 4
+        # if IS04 < 2:
+        #     IS04 = 2
+        # elif IS04 > 4:
+        #     IS04 = 4
         IM41 = np.mean(BT41)
-        IS41 = np.mean(BT41, ddof=1)
-        if IS41 < 2:
-            IS41 = 2
-        elif IS41 > 4:
-            IS41 = 4
-        part1 = (IT04 - IM04) > (2 * IS04)
-        part2 = (IT41 - IM41) > (2 * IS41)
+        IS41 = np.std(BT41, ddof=1)
+        # if IS41 < 2:
+        #     IS41 = 2
+        # elif IS41 > 4:
+        #     IS41 = 4
+        part1 = (IT04 - IM04) > (3 * IS04)
+        part2 = (IT41 - IM41) > (3.5 * IS41)
         if part1 and part2:
             return 1
     return 0
@@ -370,28 +371,30 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     # 进行火点检测
     # 进行第一类绝对火点检测
     Compensation_value = 15 * thermal_data[3, :, :]
-    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 280
+    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 295
     # 以5 * 5建立背景窗口，进行第二类绝对火点检测
     win_xs = win_ys = 5
-    kernel = (np.arange(win_xs * win_ys) + 1) / (win_xs * win_ys)  # 存在问题
-    BT41 = np.maximum(thermal_data[0, :, :] - thermal_data[1, :, :], Compensation_value)
+    kernel = np.ones(win_xs * win_ys) / (win_xs * win_ys)
+    BT41 = np.maximum((thermal_data[0, :, :] - thermal_data[1, :, :]), Compensation_value)
     BT04 = np.maximum(thermal_data[0, :, :], 280 + Compensation_value)
     ext_BT04 = Extend(win_xs, win_ys, BT04)
     MT04 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT04)
     ext_BT41 = Extend(win_xs, win_ys, BT41)
     MT41 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT41)
-    part1 = (BT04 - MT04) > 20
-    part2 = (BT04 - Compensation_value) > 280
-    part3 = (MT41 - Compensation_value) < 30
+    part1 = (BT04 - MT04) > 7
+    part2 = (BT04 - Compensation_value) > 300
+    part3 = (MT41 - Compensation_value) < 33
     fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
+    # fire_mask = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     fire_mask = np.bitwise_or(fire_mask, fire_abs2)
+    # fire_mask = np.bitwise_and(part1, part2)
     # 进行背景火点检测
     # 潜在火点的识别
-    part4 = (BT04 - MT04) > 2
-    part5 = (BT41 - MT41) > 2
+    part4 = (BT04 - MT04) > 5
+    part5 = (BT41 - MT41) > 5
     fire_pot = np.bitwise_and(np.bitwise_and(np.bitwise_or(part2, part4), part5), part3)
     # fire_mask = np.bitwise_or(fire_mask, fire_pot)
-    # 过滤已检测出的绝对火点，云，和非植被区域
+    # # 过滤已检测出的绝对火点，云，和非植被区域
     clear_area = thermal_data * (1 - cloud_data) * plant_data * (1 - fire_mask) * (1 - fire_pot)
     # 对潜在火点进行逐个判断
     for irow in range(ysize):
@@ -412,12 +415,13 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     out_ds.SetProjection(thermal_ds.GetProjection())
     out_ds.GetRasterBand(1).WriteArray(fire_mask)
     out_ds = None
+    thermal_ds = None
     return 1
 
 
 def action(indir, outdir, veg_msk, shp_file):
     # 搜索文件
-    files = searchfiles(indir, partfileinfo='*20200331*.nc')
+    files = searchfiles(indir, partfileinfo='*20200330_0600*.nc')
     for ifile in files:
         basename = os.path.splitext(os.path.basename(ifile))[0]
         visual_file, nir_file = transformTogeotiff(ifile, outdir)
@@ -459,10 +463,10 @@ def main():
     # out_dir_path = args.dstdir
     # shp = args.vector
     # vegetation_mask = plant
-    H8_dir_path = r"F:\kuihua8\fire"
-    out_dir_path = r"F:\kuihua8\out\tmp"
-    shp = r"F:\kuihua8\guojie\bou1_4p.shp"
-    vegetation_mask = r"F:\kuihua8\vegetable\veg_china_mask.tif"
+    H8_dir_path = r"E:\H8\nc"
+    out_dir_path = r"E:\H8\out"
+    shp = r"E:\H8\shp\bou1_4p.shp"
+    vegetation_mask = r"E:\H8\veg\veg_china_mask.tif"
     action(H8_dir_path, out_dir_path, veg_msk=vegetation_mask, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
