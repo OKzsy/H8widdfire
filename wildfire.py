@@ -386,7 +386,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     MT41 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT41)
     part1 = (BT04 - MT04) > 7
     part2 = (BT04 - Compensation_value) > 300
-    part3 = (MT41 - Compensation_value) < 33
+    part3 = (MT41 - Compensation_value) < 30
     fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     # fire_mask = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     fire_mask = np.bitwise_or(fire_mask, fire_abs2)
@@ -396,7 +396,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     part4 = (BT04 - MT04) > 5
     part5 = (BT41 - MT41) > 5
     fire_pot = np.bitwise_and(np.bitwise_and(np.bitwise_or(part2, part4), part5), part3)
-    # fire_mask = np.bitwise_or(fire_mask, fire_pot)
+    fire_mask = np.bitwise_or(fire_mask, fire_pot)
     # # 过滤已检测出的绝对火点，云，和非植被区域
     clear_area = thermal_data * (1 - cloud_data) * plant_data * (1 - fire_mask) * (1 - fire_pot)
     # 对潜在火点进行逐个判断
@@ -408,7 +408,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
             # 动态窗口进行判断
             fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data[0, irow, icol], thermal_data[1, irow, icol], clear_area)
             fire_pot[irow, icol] = fire_res
-    fire_mask = np.bitwise_or(fire_mask, fire_pot)
+    # fire_mask = np.bitwise_or(fire_mask, fire_pot)
     dirpath = os.path.dirname(thermal_file)
     basename = os.path.splitext(os.path.basename(thermal_file))[0]
     fire_mask_path = os.path.join(dirpath, basename) + '_fire_msk.tif'
