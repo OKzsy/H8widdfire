@@ -303,7 +303,8 @@ def img_mean(xs, ys, ori_xsize, ori_ysize, kernel, ext_img):
     return filtered_img
 
 
-def detect_dynamic(point_x, point_y, rows, cols, IT04, IT41, data):
+def detect_dynamic(point_x, point_y, rows, cols, IT04, IT11, data):
+    IT41 = IT04 - IT11
     anchor_x = point_x
     anchor_y = point_y
     for win_size in range(3, 22, 2):
@@ -331,16 +332,16 @@ def detect_dynamic(point_x, point_y, rows, cols, IT04, IT41, data):
             continue
         IM04 = np.mean(BT04)
         IS04 = np.std(BT04, ddof=1)
-        # if IS04 < 2:
-        #     IS04 = 2
-        # elif IS04 > 4:
-        #     IS04 = 4
+        if IS04 < 2:
+            IS04 = 2
+        elif IS04 > 4:
+            IS04 = 4
         IM41 = np.mean(BT41)
         IS41 = np.std(BT41, ddof=1)
-        # if IS41 < 2:
-        #     IS41 = 2
-        # elif IS41 > 4:
-        #     IS41 = 4
+        if IS41 < 2:
+            IS41 = 2
+        elif IS41 > 4:
+            IS41 = 4
         part1 = (IT04 - IM04) > (3 * IS04)
         part2 = (IT41 - IM41) > (3.5 * IS41)
         if part1 and part2:
@@ -376,7 +377,9 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     win_xs = win_ys = 5
     kernel = np.ones(win_xs * win_ys) / (win_xs * win_ys)
     BT41 = np.maximum((thermal_data[0, :, :] - thermal_data[1, :, :]), Compensation_value)
+    # BT41 = thermal_data[0, :, :] - thermal_data[1, :, :]
     BT04 = np.maximum(thermal_data[0, :, :], 280 + Compensation_value)
+    # BT04 = thermal_data[0, :, :]
     ext_BT04 = Extend(win_xs, win_ys, BT04)
     MT04 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT04)
     ext_BT41 = Extend(win_xs, win_ys, BT41)
@@ -403,7 +406,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
             if not value:
                 continue
             # 动态窗口进行判断
-            fire_res = detect_dynamic(irow, icol, ysize, xsize, BT04[irow, icol], BT41[irow, icol], clear_area)
+            fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data[0, irow, icol], thermal_data[1, irow, icol], clear_area)
             fire_pot[irow, icol] = fire_res
     fire_mask = np.bitwise_or(fire_mask, fire_pot)
     dirpath = os.path.dirname(thermal_file)
@@ -463,10 +466,10 @@ def main():
     # out_dir_path = args.dstdir
     # shp = args.vector
     # vegetation_mask = plant
-    H8_dir_path = r"E:\H8\nc"
-    out_dir_path = r"E:\H8\out"
-    shp = r"E:\H8\shp\bou1_4p.shp"
-    vegetation_mask = r"E:\H8\veg\veg_china_mask.tif"
+    H8_dir_path = r"F:\kuihua8\fire"
+    out_dir_path = r"F:\kuihua8\out\tmp"
+    shp = r"F:\kuihua8\guojie\bou1_4p.shp"
+    vegetation_mask = r"F:\kuihua8\vegetable\veg_china_mask.tif"
     action(H8_dir_path, out_dir_path, veg_msk=vegetation_mask, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
