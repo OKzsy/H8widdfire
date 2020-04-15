@@ -344,7 +344,8 @@ def detect_dynamic(point_x, point_y, rows, cols, IT04, IT11, data):
             IS41 = 4
         part1 = (IT04 - IM04) > (3 * IS04)
         part2 = (IT41 - IM41) > (3.5 * IS41)
-        if part1 and part2:
+        part3 = (IT41 - IM41) > 6
+        if part1 and part2 and part3:
             return True
     return False
 
@@ -372,7 +373,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     # 进行火点检测
     # 进行第一类绝对火点检测
     Compensation_value = 15 * thermal_data[3, :, :]
-    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 295
+    fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 330
     # 以5 * 5建立背景窗口，进行第二类绝对火点检测
     win_xs = win_ys = 5
     kernel = np.ones(win_xs * win_ys) / (win_xs * win_ys)
@@ -384,9 +385,9 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     MT04 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT04)
     ext_BT41 = Extend(win_xs, win_ys, BT41)
     MT41 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT41)
-    part1 = (BT04 - MT04) > 7
+    part1 = (BT04 - MT04) > 8
     part2 = (BT04 - Compensation_value) > 300
-    part3 = (MT41 - Compensation_value) < 33
+    part3 = (MT41 - Compensation_value) < 20
     fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     # fire_mask = np.bitwise_and(np.bitwise_and(part1, part2), part3)
     fire_mask = np.bitwise_or(fire_mask, fire_abs2)
@@ -467,7 +468,7 @@ def main():
     # shp = args.vector
     # vegetation_mask = plant
     H8_dir_path = r"F:\kuihua8\fire"
-    out_dir_path = r"F:\kuihua8\out\tmp"
+    out_dir_path = r"F:\kuihua8\out"
     shp = r"F:\kuihua8\guojie\bou1_4p.shp"
     vegetation_mask = r"F:\kuihua8\vegetable\veg_china_mask.tif"
     action(H8_dir_path, out_dir_path, veg_msk=vegetation_mask, shp_file=shp)
