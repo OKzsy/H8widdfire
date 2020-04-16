@@ -309,7 +309,7 @@ def detect_dynamic(point_x, point_y, rows, cols, data, valid_back, back_fire):
     IT41 = IT04 - IT11
     anchor_x = point_x
     anchor_y = point_y
-    for win_size in range(3, 22, 2):
+    for win_size in range(3, 11, 2):
         radius = win_size // 2
         star_x = -radius if (anchor_x - radius) >= 0 else -anchor_x
         star_y = -radius if (anchor_y - radius) >= 0 else -anchor_y
@@ -325,11 +325,11 @@ def detect_dynamic(point_x, point_y, rows, cols, data, valid_back, back_fire):
         thermal_matrix = data[0:2, grad_index[1], grad_index[0]]
         # 计算该窗口的统计信息
         bt04 = thermal_matrix[0, :, :]
-        bk_bt04 = bt04 * back_fire_matrix
+        bk_bt04 = thermal_matrix[0, :, :] * back_fire_matrix
         bt04_index = np.where(bt04 != 0)
         # 判断是否满足基本条件
         all_num = bt04_index[0].shape[0]
-        clear_num = np.where(valid_matrix != 0)[0].shape[0]
+        clear_num = np.where(valid_matrix == 1)[0].shape[0]
         if not ((clear_num / all_num >= 0.25) and (clear_num >= 8)):
             continue
         bt04 = bt04 * valid_matrix
@@ -338,26 +338,28 @@ def detect_dynamic(point_x, point_y, rows, cols, data, valid_back, back_fire):
         BT04 = bt04[np.where(bt04 != 0)]
         BT41 = bt41[np.where(bt41 != 0)]
         IM04 = np.mean(BT04)
-        IS04 = np.std(BT04, ddof=1)
+        IS04 = np.sum(np.abs(BT04 - IM04)) / clear_num
+        # IS04 = np.std(BT04, ddof=1)
         # if IS04 < 2:
         #     IS04 = 2
         # elif IS04 > 4:
         #     IS04 = 4
         IM41 = np.mean(BT41)
-        IS41 = np.std(BT41, ddof=1)
+        IS41 = np.sum(np.abs(BT41 - IM41)) / clear_num
+        # IS41 = np.std(BT41, ddof=1)
         # if IS41 < 2:
         #     IS41 = 2
         # elif IS41 > 4:
         #     IS41 = 4
         bk_BT04 = bk_bt04[np.where(bk_bt04 != 0)]
-        bk_IS04 = np.std(bk_BT04, ddof=1)
-        part1 = (IT04 - IM04) > (3 * IS04)
-        part2 = (IT41 - IM41) > (3.5 * IS41)
-        part3 = (IT41 - IM41) > 6
+        bk_IM04 = np.mean(bk_BT04)
+        bk_IS04 = np.sum(np.abs(bk_BT04 - bk_IM04)) / np.where(bk_bt04 != 0)[0].shape[0]
+        part1 = (IT41 - IM41) > (3.5 * IS41)
+        part2 = (IT41 - IM41) > 6
+        part3 = (IT04 - IM04) > (3 * IS04)
         part4 = (IT11 - IM41) > IS41 - 4
         part5 = bk_IS04 > 5
-        part6 = IT04 > 360
-        if (part6 or (part1 and part2 and part3 and (part4 or part5))):
+        if (part1 and part2 and part3 and (part4 or part5)):
             return True
     return False
 
@@ -383,33 +385,33 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     绝对火点掩膜、云掩膜剔除不需要进一步检测的像元点，对于剩余的像元点进行背景火点检测。
     """
     # 进行火点检测
+    thermal_data = thermal_data * (1 - cloud_data) * plant_data
     # 进行第一类绝对火点检测
     Compensation_value = 15 * thermal_data[3, :, :]
     fire_mask = (thermal_data[0, :, :] - 2 * Compensation_value) > 330
     # 采用modis方法进行火点检测
     # 首先去除绝对火点
-    thermal_data_without_absfire = thermal_data * (1 - fire_mask)
-    bt04 = thermal_data_without_absfire[0, :, :]
-    bt11 = thermal_data_without_absfire[1, :, :]
+    bt04 = thermal_data[0, :, :]
+    bt11 = thermal_data[1, :, :]
     # 获取潜在火点
     part1 = bt04 > 300
     part2 = (bt04 - bt11) > 8
     fire_pot = np.bitwise_and(np.bitwise_and(np.bitwise_and(part1, part2), 1 - cloud_data), plant_data)
-    # 获取有效背景
+    # 获取背景火点
     part1 = bt04 > 325
     part2 = (bt04 - bt11) > 20
-    valid_bk = np.bitwise_and(np.bitwise_and(np.bitwise_and(part1, part2), 1 - cloud_data), plant_data)
-    # 获取背景火点
-    bk_fire = (fire_pot - valid_bk) > 0
-    # 进行动态窗口检测
-    for irow in range(ysize):
-        for icol in range(xsize):
-            value = fire_pot[irow, icol]
-            if not value:
-                continue
-            # 动态窗口进行判断
-            fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data, valid_bk, bk_fire)
-            fire_mask[irow, icol] = fire_res
+    bk_fire = np.bitwise_and(part1, part2)
+    # # 获取有效背景
+    # valid_bk = np.bitwise_and(np.bitwise_and(1 - bk_fire, 1 - cloud_data), plant_data)
+    # # 进行动态窗口检测
+    # for irow in range(ysize):
+    #     for icol in range(xsize):
+    #         value = fire_pot[irow, icol]
+    #         if not value:
+    #             continue
+    #         # 动态窗口进行判断
+    #         fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data, valid_bk, bk_fire)
+    #         fire_pot[irow, icol] = fire_res
     # # 以5 * 5建立背景窗口，进行第二类绝对火点检测
     # win_xs = win_ys = 5
     # kernel = np.ones(win_xs * win_ys) / (win_xs * win_ys)
@@ -444,7 +446,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     #         # 动态窗口进行判断
     #         fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data[0, irow, icol], thermal_data[1, irow, icol], clear_area)
     #         fire_pot[irow, icol] = fire_res
-    # # fire_mask = np.bitwise_or(fire_mask, fire_pot)
+    fire_mask = np.bitwise_or(fire_mask, fire_pot)
     fire_mask = fire_mask.astype(dtype=np.byte)
     dirpath = os.path.dirname(thermal_file)
     basename = os.path.splitext(os.path.basename(thermal_file))[0]
@@ -504,7 +506,7 @@ def main():
     # shp = args.vector
     # vegetation_mask = plant
     H8_dir_path = r"F:\kuihua8\fire"
-    out_dir_path = r"F:\kuihua8\out"
+    out_dir_path = r"F:\kuihua8\out\tmp"
     shp = r"F:\kuihua8\guojie\bou1_4p.shp"
     vegetation_mask = r"F:\kuihua8\vegetable\veg_china_mask.tif"
     action(H8_dir_path, out_dir_path, veg_msk=vegetation_mask, shp_file=shp)
