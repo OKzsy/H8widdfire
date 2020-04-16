@@ -339,18 +339,8 @@ def detect_dynamic(point_x, point_y, rows, cols, data, valid_back, back_fire):
         BT41 = bt41[np.where(bt41 != 0)]
         IM04 = np.mean(BT04)
         IS04 = np.sum(np.abs(BT04 - IM04)) / clear_num
-        # IS04 = np.std(BT04, ddof=1)
-        # if IS04 < 2:
-        #     IS04 = 2
-        # elif IS04 > 4:
-        #     IS04 = 4
         IM41 = np.mean(BT41)
         IS41 = np.sum(np.abs(BT41 - IM41)) / clear_num
-        # IS41 = np.std(BT41, ddof=1)
-        # if IS41 < 2:
-        #     IS41 = 2
-        # elif IS41 > 4:
-        #     IS41 = 4
         bk_BT04 = bk_bt04[np.where(bk_bt04 != 0)]
         bk_IM04 = np.mean(bk_BT04)
         bk_IS04 = np.sum(np.abs(bk_BT04 - bk_IM04)) / np.where(bk_bt04 != 0)[0].shape[0]
@@ -401,56 +391,22 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     part1 = bt04 > 325
     part2 = (bt04 - bt11) > 20
     bk_fire = np.bitwise_and(part1, part2)
-    # # 获取有效背景
-    # valid_bk = np.bitwise_and(np.bitwise_and(1 - bk_fire, 1 - cloud_data), plant_data)
-    # # 进行动态窗口检测
-    # for irow in range(ysize):
-    #     for icol in range(xsize):
-    #         value = fire_pot[irow, icol]
-    #         if not value:
-    #             continue
-    #         # 动态窗口进行判断
-    #         fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data, valid_bk, bk_fire)
-    #         fire_pot[irow, icol] = fire_res
-    # # 以5 * 5建立背景窗口，进行第二类绝对火点检测
-    # win_xs = win_ys = 5
-    # kernel = np.ones(win_xs * win_ys) / (win_xs * win_ys)
-    # BT41 = np.maximum((thermal_data[0, :, :] - thermal_data[1, :, :]), Compensation_value)
-    # # BT41 = thermal_data[0, :, :] - thermal_data[1, :, :]
-    # BT04 = np.maximum(thermal_data[0, :, :], 280 + Compensation_value)
-    # # BT04 = thermal_data[0, :, :]
-    # ext_BT04 = Extend(win_xs, win_ys, BT04)
-    # MT04 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT04)
-    # ext_BT41 = Extend(win_xs, win_ys, BT41)
-    # MT41 = img_mean(win_xs, win_ys, xsize, ysize, kernel, ext_BT41)
-    # part1 = (BT04 - MT04) > 7
-    # part2 = (BT04 - Compensation_value) > 300
-    # part3 = (MT41 - Compensation_value) < 30
-    # fire_abs2 = np.bitwise_and(np.bitwise_and(part1, part2), part3)
-    # # fire_mask = np.bitwise_and(np.bitwise_and(part1, part2), part3)
-    # fire_mask = np.bitwise_or(fire_mask, fire_abs2)
-    # # fire_mask = np.bitwise_and(part1, part2)
-    # # 进行背景火点检测
-    # # 潜在火点的识别
-    #
-    # fire_pot = np.bitwise_and(np.bitwise_and(np.bitwise_or(part2, part4), part5), part3)
-    # fire_mask = np.bitwise_or(fire_mask, fire_pot)
-    # # # 过滤已检测出的绝对火点，云，和非植被区域
-    # clear_area = thermal_data * (1 - cloud_data) * plant_data * (1 - fire_mask) * (1 - fire_pot)
-    # # 对潜在火点进行逐个判断
-    # for irow in range(ysize):
-    #     for icol in range(xsize):
-    #         value = fire_pot[irow, icol]
-    #         if not value:
-    #             continue
-    #         # 动态窗口进行判断
-    #         fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data[0, irow, icol], thermal_data[1, irow, icol], clear_area)
-    #         fire_pot[irow, icol] = fire_res
+    # 获取有效背景
+    valid_bk = np.bitwise_and(np.bitwise_and(1 - bk_fire, 1 - cloud_data), plant_data)
+    # 进行动态窗口检测
+    for irow in range(ysize):
+        for icol in range(xsize):
+            value = fire_pot[irow, icol]
+            if not value:
+                continue
+            # 动态窗口进行判断
+            fire_res = detect_dynamic(irow, icol, ysize, xsize, thermal_data, valid_bk, bk_fire)
+            fire_pot[irow, icol] = fire_res
     fire_mask = np.bitwise_or(fire_mask, fire_pot)
     fire_mask = fire_mask.astype(dtype=np.byte)
     dirpath = os.path.dirname(thermal_file)
     basename = os.path.splitext(os.path.basename(thermal_file))[0]
-    fire_mask_path = os.path.join(dirpath, basename) + '_fire_msk.tif'
+    fire_mask_path = os.path.join(dirpath, basename) + '_fire_msk_test2.tif'
     tif_driver = gdal.GetDriverByName('GTiff')
     out_ds = tif_driver.Create(fire_mask_path, xsize, ysize, 1, gdal.GDT_Byte)
     out_ds.SetGeoTransform(thermal_ds.GetGeoTransform())
