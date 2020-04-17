@@ -438,16 +438,22 @@ def action(indir, outdir, veg_msk, shp_file):
     return None
 
 
-# def main(argv):
-def main():
-    # parser = argparse.ArgumentParser(prog=argv[0])
-    # parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
-    # parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
-    # parser.add_argument('-v', '--vector', dest='vector', default=None)
-    # parser.add_argument('-p', '--plant', dest='plant', required=True)
-    # args = parser.parse_args(argv[1:])
-    # if not os.path.exists(args.dstdir):
-    #     os.makedirs(args.dstdir)
+def main(argv):
+    # 增加试用期
+    end_time = "2020-04-30"
+    end_date = datetime.strptime(end_time, "%Y-%m-%d")
+    # 获取程序运行时间
+    run_date = datetime.now()
+    if (end_date - run_date).days <= 0:
+        sys.exit("End of trial time")
+    parser = argparse.ArgumentParser(prog=argv[0])
+    parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
+    parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
+    parser.add_argument('-v', '--vector', dest='vector', default=None)
+    parser.add_argument('-p', '--plant', dest='plant', required=True)
+    args = parser.parse_args(argv[1:])
+    if not os.path.exists(args.dstdir):
+        os.makedirs(args.dstdir)
     # 支持中文路径
     gdal.SetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")
     # 支持中文属性字段
@@ -457,14 +463,10 @@ def main():
     # 注册所有gdal驱动
     gdal.AllRegister()
     start_time = time.time()
-    # H8_dir_path = args.srcdir
-    # out_dir_path = args.dstdir
-    # shp = args.vector
-    # vegetation_mask = plant
-    H8_dir_path = r"F:\kuihua8\fire"
-    out_dir_path = r"F:\kuihua8\out\tmp"
-    shp = r"F:\kuihua8\guojie\bou1_4p.shp"
-    vegetation_mask = r"F:\kuihua8\vegetable\veg_china_mask.tif"
+    H8_dir_path = args.srcdir
+    out_dir_path = args.dstdir
+    shp = args.vector
+    vegetation_mask = args.plant
     action(H8_dir_path, out_dir_path, veg_msk=vegetation_mask, shp_file=shp)
     end_time = time.time()
     print("time: %.4f secs." % (end_time - start_time))
@@ -472,7 +474,6 @@ def main():
 
 if __name__ == '__main__':
     try:
-        # sys.exit(main(sys.argv))
-        sys.exit(main())
+        sys.exit(main(sys.argv))
     except KeyboardInterrupt:
         sys.exit(-1)
