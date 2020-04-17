@@ -406,7 +406,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
     fire_mask = fire_mask.astype(dtype=np.byte)
     dirpath = os.path.dirname(thermal_file)
     basename = os.path.splitext(os.path.basename(thermal_file))[0]
-    fire_mask_path = os.path.join(dirpath, basename) + '_fire_msk_test2.tif'
+    fire_mask_path = os.path.join(dirpath, basename) + '_fire_msk.tif'
     tif_driver = gdal.GetDriverByName('GTiff')
     out_ds = tif_driver.Create(fire_mask_path, xsize, ysize, 1, gdal.GDT_Byte)
     out_ds.SetGeoTransform(thermal_ds.GetGeoTransform())
@@ -419,7 +419,7 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
 
 def action(indir, outdir, veg_msk, shp_file):
     # 搜索文件
-    files = searchfiles(indir, partfileinfo='*20200330_0600*.nc')
+    files = searchfiles(indir, partfileinfo='*.nc')
     for ifile in files:
         basename = os.path.splitext(os.path.basename(ifile))[0]
         visual_file, nir_file = transformTogeotiff(ifile, outdir)
