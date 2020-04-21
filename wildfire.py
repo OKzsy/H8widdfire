@@ -439,13 +439,6 @@ def action(indir, outdir, veg_msk, shp_file):
 
 
 def main(argv):
-    # 增加试用期
-    end_time = "2020-04-30"
-    end_date = datetime.strptime(end_time, "%Y-%m-%d")
-    # 获取程序运行时间
-    run_date = datetime.now()
-    if (end_date - run_date).days <= 0:
-        sys.exit("End of trial time")
     parser = argparse.ArgumentParser(prog=argv[0])
     parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
     parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
