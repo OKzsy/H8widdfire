@@ -458,6 +458,8 @@ def main(argv):
     ogr.RegisterAll()
     # 注册所有gdal驱动
     gdal.AllRegister()
+    gdal.UseExceptions()
+    gdal.PushErrorHandler('CPLQuietErrorHandler')
     start_time = time.time()
     H8_dir_path = args.srcdir
     out_dir_path = args.dstdir
