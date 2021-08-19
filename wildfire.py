@@ -418,8 +418,11 @@ def detectFire(thermal_file, cloud_mask, plant_mask):
 
 
 def action(indir, outdir, veg_msk, shp_file):
-    # 搜索文件
-    files = searchfiles(indir, partfileinfo='*.nc')
+    # 搜索文件,判断是否为文件夹
+    if os.path.isdir(indir):
+        files = searchfiles(indir, partfileinfo='*.nc')
+    else:
+        files = [indir]
     for ifile in files:
         basename = os.path.splitext(os.path.basename(ifile))[0]
         visual_file, nir_file = transformTogeotiff(ifile, outdir)
@@ -440,10 +443,10 @@ def action(indir, outdir, veg_msk, shp_file):
 
 def main(argv):
     parser = argparse.ArgumentParser(prog=argv[0])
-    parser.add_argument('-src', '--srcdir', dest='srcdir', required=True)
-    parser.add_argument('-dst', '--dstdir', dest='dstdir', required=True)
-    parser.add_argument('-v', '--vector', dest='vector', default=None)
-    parser.add_argument('-p', '--plant', dest='plant', required=True)
+    parser.add_argument('srcdir', help="The folder path that contains the file or the file path")
+    parser.add_argument('dstdir', help="The result folder path")
+    parser.add_argument('vector', help="Vector file path for area of interest")
+    parser.add_argument('plant', help="Vegetation mask file path")
     args = parser.parse_args(argv[1:])
     if not os.path.exists(args.dstdir):
         os.makedirs(args.dstdir)
